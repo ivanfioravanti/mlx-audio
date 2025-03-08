@@ -186,10 +186,7 @@
             <div class="form-group">
                 <label for="model">Model:</label>
                 <select id="model">
-                    <option value="mlx-community/Kokoro-82M-4bit">Kokoro 82M 4bit</option>
-                    <option value="mlx-community/Kokoro-82M-6bit">Kokoro 82M 6bit</option>
-                    <option value="mlx-community/Kokoro-82M-8bit">Kokoro 82M 8bit</option>
-                    <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M bf16</option>
+                    <option value="">Loading models...</option>
                 </select>
             </div>
             
@@ -232,11 +229,11 @@
         const playBtn = document.getElementById('playBtn');
         const stopBtn = document.getElementById('stopBtn');
         const statusElement = document.getElementById('status');
+        const modelSelect = document.getElementById('model');
 
         // TTS elements
         const textInput = document.getElementById('text');
         const voiceSelect = document.getElementById('voice');
-        const modelSelect = document.getElementById('model');
         const speedInput = document.getElementById('speed');
         const speedValue = document.getElementById('speed-value');
         const generateBtn = document.getElementById('generateBtn');
@@ -338,6 +335,26 @@
         speedInput.addEventListener('input', function() {
             speedValue.textContent = this.value;
         });
+        
+        // Fetch available models from server
+        fetch('/available_models')
+            .then(response => response.json())
+            .then(data => {
+                // Clear loading option
+                modelSelect.innerHTML = '';
+                
+                // Add models to select element
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.name;
+                    modelSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching models:', error);
+                modelSelect.innerHTML = '<option value="">Error loading models</option>';
+            });
         
         // Generate speech button handler
         generateBtn.addEventListener('click', function() {

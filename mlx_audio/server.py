@@ -4,6 +4,9 @@ import logging
 import os
 import sys
 import uuid
+import json
+import requests
+from datetime import datetime, timedelta
 
 import numpy as np
 import soundfile as sf
@@ -24,8 +27,6 @@ def setup_logging(verbose: bool = False):
     logging.basicConfig(level=level, format=format_str)
     return logging.getLogger("mlx_audio_server")
 
-
-logger = setup_logging()  # Will be updated with verbose setting in main()
 
 from mlx_audio.tts.generate import main as generate_main
 
@@ -55,7 +56,11 @@ audio_player = None  # Will be initialized when the server starts
 # Use an absolute path that's guaranteed to be writable
 OUTPUT_FOLDER = os.path.join(os.path.expanduser("~"), ".mlx_audio", "outputs")
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-logger.debug(f"Using output folder: {OUTPUT_FOLDER}")
+# logger.debug(f"Using output folder: {OUTPUT_FOLDER}")
+
+# Constants for model caching
+CACHE_FILE = os.path.join(os.path.expanduser("~"), ".mlx_audio", "model_cache.json")
+CACHE_DURATION = timedelta(minutes=5)  # Cache for 5 minutes
 
 
 @app.post("/tts")
@@ -86,15 +91,11 @@ def tts_endpoint(
         return JSONResponse({"error": "Invalid speed value"}, status_code=400)
 
     # Validate model parameter
-    valid_models = [
-        "mlx-community/Kokoro-82M-4bit",
-        "mlx-community/Kokoro-82M-6bit",
-        "mlx-community/Kokoro-82M-8bit",
-        "mlx-community/Kokoro-82M-bf16",
-    ]
-    if model not in valid_models:
+    available_models = get_available_models()
+    valid_model_ids = [model["id"] for model in available_models]
+    if model not in valid_model_ids:
         return JSONResponse(
-            {"error": f"Invalid model. Must be one of: {', '.join(valid_models)}"},
+            {"error": f"Invalid model. Must be one of: {', '.join(valid_model_ids)}"},
             status_code=400,
         )
 
@@ -127,7 +128,6 @@ def tts_endpoint(
         voice=voice,
         speed=speed_float,
         lang_code="a",
-        verbose=False,
     )
 
     # We'll just gather all segments (if any) into a single wav
@@ -473,6 +473,110 @@ def main(host="127.0.0.1", port=8000, verbose=False):
         port=args.port,
         log_level="debug" if args.verbose else "info",
     )
+
+
+def fetch_and_cache_models():
+    """Fetch available models from HuggingFace and cache them."""
+    # Default models if everything fails
+    default_models = [
+        {"id": "mlx-community/Kokoro-82M-4bit", "name": "Kokoro 82M 4bit"},
+        {"id": "mlx-community/Kokoro-82M-6bit", "name": "Kokoro 82M 6bit"},
+        {"id": "mlx-community/Kokoro-82M-8bit", "name": "Kokoro 82M 8bit"},
+        {"id": "mlx-community/Kokoro-82M-bf16", "name": "Kokoro 82M bf16"}
+    ]
+    
+    # Try to read existing cache first
+    cached_models = None
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r') as f:
+                cache_data = json.load(f)
+                cached_models = cache_data.get("models", [])
+    except Exception as e:
+        logger.warning(f"Failed to read existing cache: {str(e)}")
+    
+    try:
+        # Fetch models from HuggingFace API
+        response = requests.get(
+            "https://huggingface.co/api/models",
+            params={
+                "filter": "text-to-speech",
+                "author": "mlx-community",
+            },
+            headers={
+                "Accept": "application/json"
+            },
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            models_data = response.json()
+            # Filter models to ensure they are MLX TTS models
+            models_list = [
+                {"id": model["modelId"], "name": model["modelId"].split("/")[-1]}
+                for model in models_data
+                # Check if both 'mlx' and 'text-to-speech' are in the tags list
+                if "tags" in model and "mlx" in model["tags"] and "text-to-speech" in model["tags"]
+            ]
+            
+            # If no models found after filtering, use cached or default
+            if not models_list:
+                logger.warning("No MLX TTS models found in API response")
+                return cached_models if cached_models else default_models
+            
+            # Update cache with new data
+            cache_data = {
+                "timestamp": datetime.now().isoformat(),
+                "models": models_list
+            }
+            
+            # Ensure cache directory exists
+            os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+            
+            # Save to cache file
+            try:
+                with open(CACHE_FILE, 'w') as f:
+                    json.dump(cache_data, f)
+                logger.debug("Successfully updated model cache")
+            except Exception as e:
+                logger.error(f"Failed to write model cache: {str(e)}")
+            
+            return models_list
+            
+        else:
+            logger.warning(f"HuggingFace API returned status code: {response.status_code}")
+            # Return cached models if available, otherwise default models
+            return cached_models if cached_models else default_models
+            
+    except Exception as e:
+        logger.warning(f"Failed to fetch models from HuggingFace: {str(e)}")
+        # Return cached models if available, otherwise default models
+        return cached_models if cached_models else default_models
+
+def get_available_models():
+    """Get available models from cache or fetch new ones."""
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r') as f:
+                cache_data = json.load(f)
+                
+            # Check if cache is still valid (less than 5 minutes old)
+            cache_time = datetime.fromisoformat(cache_data["timestamp"])
+            if datetime.now() - cache_time < CACHE_DURATION:
+                logger.debug("Using cached model list")
+                return cache_data["models"]
+                
+            logger.debug("Cache expired, fetching fresh data")
+    except Exception as e:
+        logger.warning(f"Failed to read model cache: {str(e)}")
+    
+    # If cache doesn't exist, is invalid, or there was an error, fetch new data
+    return fetch_and_cache_models()
+
+@app.get("/available_models")
+def available_models():
+    """Endpoint to get available models."""
+    return {"models": get_available_models()}
 
 
 if __name__ == "__main__":
