@@ -14,8 +14,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from mlx_audio.codec.models.snac import SNAC
-
-from ..base import GenerationResult
+from mlx_audio.tts.models.base import GenerationResult, split_text_into_chunks
 
 
 @dataclass
@@ -286,45 +285,6 @@ class Model(nn.Module):
 
         return code_lists
 
-    def _split_text_into_chunks(self, text: str, max_chars: int = 300) -> List[str]:
-        """
-        Split text into smaller chunks that can be processed individually.
-        Tries to split on sentence boundaries when possible.
-
-        Args:
-            text (str): The text to split
-            max_chars (int): Maximum characters per chunk
-
-        Returns:
-            List[str]: List of text chunks
-        """
-        # Try to split on sentence boundaries first
-        chunks = []
-        sentences = re.split(r"([.!?]+)", text)
-        current_chunk = ""
-
-        for i in range(0, len(sentences), 2):
-            sentence = sentences[i]
-            # Add the punctuation back if it exists
-            if i + 1 < len(sentences):
-                sentence += sentences[i + 1]
-
-            if len(current_chunk) + len(sentence) <= max_chars:
-                current_chunk += sentence
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence
-
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-
-        # If no chunks were created (no sentence boundaries), fall back to character-based chunking
-        if not chunks:
-            chunks = [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
-
-        return [chunk for chunk in chunks if chunk.strip()]
-
     def generate(
         self,
         text,
@@ -345,7 +305,7 @@ class Model(nn.Module):
         all_prompts = []
         for p in prompts:
             if len(p) > 300:  # Only split if text is longer than 300 chars
-                chunks = self._split_text_into_chunks(p)
+                chunks = split_text_into_chunks(p)
                 all_prompts.extend(chunks)
             else:
                 all_prompts.append(p)
@@ -373,15 +333,14 @@ class Model(nn.Module):
         time_start = time.time()
         all_code_lists = []
 
-        # Process each chunk separately
-        for chunk_idx, input_ids in enumerate(all_modified_input_ids):
-            sampler = make_sampler(temperature, top_p, top_k=kwargs.get("top_k", -1))
-            logits_processors = make_logits_processors(
-                kwargs.get("logit_bias", None),
-                kwargs.get("repetition_penalty", 1.3),
-                kwargs.get("repetition_context_size", 20),
-            )
+        sampler = make_sampler(temperature, top_p, top_k=kwargs.get("top_k", -1))
+        logits_processors = make_logits_processors(
+            kwargs.get("logit_bias", None),
+            kwargs.get("repetition_penalty", 1.3),
+            kwargs.get("repetition_context_size", 20),
+        )
 
+        for chunk_idx, input_ids in enumerate(all_modified_input_ids):
             chunk_input_ids = input_ids
 
             # TODO: Support batch processing as in the Colab: https://github.com/canopyai/Orpheus-TTS
@@ -423,10 +382,10 @@ class Model(nn.Module):
         time_end = time.time()
 
         if len(all_prompts) != len(my_samples):
-            # If there's a mismatch, just provide what we have
+            # Raise an error when there's a mismatch between prompts and generated samples
             available_samples = len(my_samples)
-            print(
-                f"Warning: Number of prompts ({len(all_prompts)}) and samples ({available_samples}) do not match"
+            raise RuntimeError(
+                f"Error: Number of prompts ({len(all_prompts)}) and samples ({available_samples}) do not match"
             )
 
         for i in range(len(my_samples)):

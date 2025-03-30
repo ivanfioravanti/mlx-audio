@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 
 from mlx_audio.codec import Mimi
 
-from ..base import GenerationResult
+from ..base import GenerationResult, split_text_into_chunks
 from .attention import Attention
 
 try:
@@ -279,45 +279,6 @@ class Model(nn.Module):
 
         self.sample_rate = mimi.cfg.sample_rate
 
-    def _split_text_into_chunks(self, text: str, max_chars: int = 300) -> List[str]:
-        """
-        Split text into smaller chunks that can be processed individually.
-        Tries to split on sentence boundaries when possible.
-
-        Args:
-            text (str): The text to split
-            max_chars (int): Maximum characters per chunk
-
-        Returns:
-            List[str]: List of text chunks
-        """
-        # Try to split on sentence boundaries first
-        chunks = []
-        sentences = re.split(r"([.!?]+)", text)
-        current_chunk = ""
-
-        for i in range(0, len(sentences), 2):
-            sentence = sentences[i]
-            # Add the punctuation back if it exists
-            if i + 1 < len(sentences):
-                sentence += sentences[i + 1]
-
-            if len(current_chunk) + len(sentence) <= max_chars:
-                current_chunk += sentence
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence
-
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-
-        # If no chunks were created (no sentence boundaries), fall back to character-based chunking
-        if not chunks:
-            chunks = [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
-
-        return [chunk for chunk in chunks if chunk.strip()]
-
     def _tokenize_text_segment(
         self, text: str, speaker: int
     ) -> Tuple[mx.array, mx.array]:
@@ -390,8 +351,11 @@ class Model(nn.Module):
         **kwargs,
     ):
         # Split long text into chunks
-        text_chunks = self._split_text_into_chunks(text)
+        text_chunks = split_text_into_chunks(text)
         results = []
+
+        # Create sampler once before the loop
+        sampler = sampler or make_sampler(temp=0.9, top_k=50)
 
         # Process each chunk separately
         for chunk_idx, chunk in enumerate(text_chunks):
@@ -412,7 +376,6 @@ class Model(nn.Module):
 
             start_time = time.time()
 
-            sampler = sampler or make_sampler(temp=0.9, top_k=50)
             max_audio_frames = int(max_audio_length_ms / 80)
 
             tokens, tokens_mask = [], []
