@@ -10,7 +10,7 @@ import numpy as np
 import requests
 import soundfile as sf
 import uvicorn
-from fastapi import FastAPI, Form, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -108,9 +108,11 @@ def speech_to_speech_endpoint(args: SpeechToSpeechArgs):
 def tts_endpoint(
     text: str = Form(...),
     voice: str = Form(None),
-    speed: float = Form(1.0),
+    speed: str = Form("1.0"),
     model: str = Form("mlx-community/Kokoro-82M-4bit"),
     language: str = Form("a"),
+    pitch: str = Form(None),
+    gender: str = Form(None),
     reference_audio: UploadFile = File(None),
 ):
     """
@@ -123,15 +125,37 @@ def tts_endpoint(
     if not text.strip():
         return JSONResponse({"error": "Text is empty"}, status_code=400)
 
-    # Validate speed parameter
-    try:
-        speed_float = float(speed)
-        if speed_float < 0.5 or speed_float > 2.0:
-            return JSONResponse(
-                {"error": "Speed must be between 0.5 and 2.0"}, status_code=400
-            )
-    except ValueError:
-        return JSONResponse({"error": "Invalid speed value"}, status_code=400)
+    # Handle speed parameter based on model type
+    if "spark" in model.lower():
+        # Spark actually expects float values that map to speed descriptions
+        speed_map = {
+            "very_low": 0.0,
+            "low": 0.5,
+            "moderate": 1.0,
+            "high": 1.5,
+            "very_high": 2.0,
+        }
+        if speed in speed_map:
+            speed_value = speed_map[speed]
+        else:
+            # Try to use as float, default to 1.0 (moderate) if invalid
+            try:
+                speed_value = float(speed)
+                if speed_value not in [0.0, 0.5, 1.0, 1.5, 2.0]:
+                    speed_value = 1.0  # Default to moderate
+            except:
+                speed_value = 1.0  # Default to moderate
+    else:
+        # Other models use float speed values
+        try:
+            speed_float = float(speed)
+            if speed_float < 0.5 or speed_float > 2.0:
+                return JSONResponse(
+                    {"error": "Speed must be between 0.5 and 2.0"}, status_code=400
+                )
+            speed_value = speed_float
+        except ValueError:
+            return JSONResponse({"error": "Invalid speed value"}, status_code=400)
 
     # Remove strict model validation - let the load_model function handle it
     # This allows for more flexibility in model selection
@@ -160,7 +184,7 @@ def tts_endpoint(
     output_path = os.path.join(OUTPUT_FOLDER, filename)
 
     logger.debug(
-        f"Generating TTS for text: '{text[:50]}...' with voice: {voice}, speed: {speed_float}, model: {model}, language: {language}"
+        f"Generating TTS for text: '{text[:50]}...' with voice: {voice}, speed: {speed_value}, model: {model}, language: {language}"
     )
     logger.debug(f"Output file will be: {output_path}")
 
@@ -198,26 +222,49 @@ def tts_endpoint(
         with open(temp_audio_path, "wb") as f:
             f.write(reference_audio.file.read())
         ref_audio_path = temp_audio_path
-    
+
     # Prepare generation parameters
     gen_params = {
         "text": text,
-        "speed": speed_float,
+        "speed": speed_value,
         "verbose": False,
+        "max_tokens": 8000,
     }
-    
+
+    # Add pitch and gender for Spark models
+    if "spark" in model.lower():
+        # Spark expects float values for pitch that map to descriptions
+        pitch_map = {
+            "very_low": 0.0,
+            "low": 0.5,
+            "moderate": 1.0,
+            "high": 1.5,
+            "very_high": 2.0,
+        }
+        if pitch and pitch in pitch_map:
+            gen_params["pitch"] = pitch_map[pitch]
+        else:
+            gen_params["pitch"] = 1.0  # Default to moderate
+
+        # Ensure gender has a valid value
+        valid_genders = ["female", "male"]
+        if gender and gender in valid_genders:
+            gen_params["gender"] = gender
+        else:
+            gen_params["gender"] = "female"
+
     # Add model-specific parameters
-    if voice:
+    if voice and voice.strip():  # Only add voice if it's not empty or whitespace
         gen_params["voice"] = voice
-    
+
     # Check if model supports language codes (primarily Kokoro)
-    if "kokoro" in model.lower() or "bark" in model.lower():
+    if "kokoro" in model.lower():
         gen_params["lang_code"] = lang_code
-    
+
     # Add reference audio for models that support it
     if ref_audio_path and ("csm" in model.lower() or "sesame" in model.lower()):
         gen_params["ref_audio"] = ref_audio_path
-    
+
     # We'll use the high-level "model.generate" method:
     try:
         results = tts_model.generate(**gen_params)
@@ -473,12 +520,21 @@ def get_models():
             "supports_voices": True,
             "supports_reference_audio": False,
             "variants": [
-                {"value": "mlx-community/Kokoro-82M-4bit", "name": "Kokoro 82M (4-bit)"},
-                {"value": "mlx-community/Kokoro-82M-6bit", "name": "Kokoro 82M (6-bit)"},
-                {"value": "mlx-community/Kokoro-82M-8bit", "name": "Kokoro 82M (8-bit)"},
+                {
+                    "value": "mlx-community/Kokoro-82M-4bit",
+                    "name": "Kokoro 82M (4-bit)",
+                },
+                {
+                    "value": "mlx-community/Kokoro-82M-6bit",
+                    "name": "Kokoro 82M (6-bit)",
+                },
+                {
+                    "value": "mlx-community/Kokoro-82M-8bit",
+                    "name": "Kokoro 82M (8-bit)",
+                },
                 {"value": "mlx-community/Kokoro-82M-bf16", "name": "Kokoro 82M (bf16)"},
                 {"value": "prince-canuma/Kokoro-82M", "name": "Kokoro 82M (Original)"},
-            ]
+            ],
         },
         {
             "id": "csm",
@@ -488,32 +544,9 @@ def get_models():
             "supports_voices": False,
             "supports_reference_audio": True,
             "variants": [
-                {"value": "mlx-community/csm-1b", "name": "CSM 1B"},
-            ]
-        },
-        {
-            "id": "bark",
-            "name": "Bark",
-            "description": "Multi-language TTS with sound effects",
-            "supports_languages": True,
-            "supports_voices": True,
-            "supports_reference_audio": False,
-            "variants": [
-                {"value": "mlx-community/bark", "name": "Bark (Default)"},
-                {"value": "mlx-community/bark-small", "name": "Bark Small"},
-            ]
-        },
-        {
-            "id": "outetts",
-            "name": "OuteTTS",
-            "description": "TTS with voice customization",
-            "supports_languages": False,
-            "supports_voices": True,
-            "supports_reference_audio": False,
-            "variants": [
-                {"value": "OuteAI/OuteTTS-0.1-350M", "name": "OuteTTS 0.1 (350M)"},
-                {"value": "OuteAI/OuteTTS-0.2-500M", "name": "OuteTTS 0.2 (500M)"},
-            ]
+                {"value": "mlx-community/csm-1b", "name": "CSM 1B (FP16)"},
+                {"value": "mlx-community/csm-1b-8bit", "name": "CSM 1B (8-bit)"},
+            ],
         },
         {
             "id": "spark",
@@ -523,8 +556,15 @@ def get_models():
             "supports_voices": True,
             "supports_reference_audio": False,
             "variants": [
-                {"value": "mlx-community/spark-v2", "name": "Spark v2"},
-            ]
+                {
+                    "value": "mlx-community/Spark-TTS-0.5B-bf16",
+                    "name": "Spark TTS (BF16)",
+                },
+                {
+                    "value": "mlx-community/Spark-TTS-0.5B-8bit",
+                    "name": "Spark TTS (8-bit)",
+                },
+            ],
         },
     ]
     return {"models": models}

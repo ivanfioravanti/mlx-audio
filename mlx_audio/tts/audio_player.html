@@ -216,62 +216,35 @@
 
         <div id="textToSpeech" class="tabcontent" style="display: block;">
             <div class="form-group">
-                <label for="text">Text to convert:</label>
-                <textarea id="text" placeholder="Enter text here..."></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="language">Language:</label>
-                <select id="language">
-                    <option value="a">🇺🇸 American English</option>
-                    <option value="b">🇬🇧 British English</option>
-                    <option value="e">🇪🇸 Spanish</option>
-                    <option value="f">🇫🇷 French</option>
-                    <option value="h">🇮🇳 Hindi</option>
-                    <option value="i">🇮🇹 Italian</option>
-                    <option value="p">🇧🇷 Portuguese (Brazilian)</option>
-                    <option value="j">🇯🇵 Japanese</option>
-                    <option value="z">🇨🇳 Mandarin Chinese</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="voice">Voice:</label>
-                <select id="voice">
-                    <option value="af_bella">AF Bella</option>
-                    <option value="af_heart">AF Heart</option>
-                    <option value="af_nicole">AF Nicole</option>
-                    <option value="af_nova">AF Nova</option>
-                    <option value="af_sarah">AF Sarah</option>
-                    <option value="af_sky">AF Sky</option>
-                    <option value="am_adam">AM Adam</option>
-                    <option value="am_michael">AM Michael</option>
-                    <option value="bf_emma">BF Emma</option>
-                    <option value="bf_isabella">BF Isabella</option>
-                    <option value="bm_george">BM George</option>
-                    <option value="bm_lewis">BM Lewis</option>
-                  </select>
-            </div>
-
-            <div class="form-group">
                 <label for="modelType">Model Type:</label>
                 <select id="modelType">
-                    <option value="kokoro">Kokoro (Multilingual)</option>
-                    <option value="csm">CSM/Sesame (Voice Cloning)</option>
-                    <option value="bark">Bark (Multi-language + Sound Effects)</option>
-                    <option value="outetts">OuteTTS (Voice Customization)</option>
-                    <option value="spark">Spark (Fast TTS)</option>
+                    <!-- Options will be loaded from server -->
                 </select>
             </div>
 
             <div class="form-group">
                 <label for="model">Model Variant:</label>
                 <select id="model">
-                    <option value="mlx-community/Kokoro-82M-4bit">Kokoro 82M (4-bit)</option>
-                    <option value="mlx-community/Kokoro-82M-6bit">Kokoro 82M (6-bit)</option>
-                    <option value="mlx-community/Kokoro-82M-8bit">Kokoro 82M (8-bit)</option>
-                    <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M (bf16)</option>
-                    <option value="prince-canuma/Kokoro-82M">Kokoro 82M (Original)</option>
+                    <!-- Options will be loaded based on selected model type -->
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="text">Text to convert:</label>
+                <textarea id="text" placeholder="Enter text here..."></textarea>
+            </div>
+
+            <div class="form-group" id="languageGroup">
+                <label for="language">Language:</label>
+                <select id="language">
+                    <!-- Options will be populated dynamically based on model -->
+                </select>
+            </div>
+
+            <div class="form-group" id="voiceGroup">
+                <label for="voice">Voice:</label>
+                <select id="voice">
+                    <!-- Options will be populated dynamically based on model and language -->
                 </select>
             </div>
 
@@ -281,9 +254,9 @@
                 <small style="color: #999;">Upload an audio file to clone its voice</small>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="speedGroup">
                 <label for="speed">Speech Speed:</label>
-                <div class="slider-container">
+                <div class="slider-container" id="normalSpeedContainer">
                     <div class="slider-labels">
                         <span>Slower</span>
                         <span>Normal</span>
@@ -292,6 +265,32 @@
                     <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0">
                     <div class="speed-value-display"><span id="speed-value">1.0</span>x</div>
                 </div>
+                <select id="sparkSpeed" style="display: none; width: 100%;">
+                    <option value="very_low">Very Slow</option>
+                    <option value="low">Slow</option>
+                    <option value="moderate" selected>Normal</option>
+                    <option value="high">Fast</option>
+                    <option value="very_high">Very Fast</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="pitchGroup" style="display: none;">
+                <label for="sparkPitch">Voice Pitch:</label>
+                <select id="sparkPitch" style="width: 100%;">
+                    <option value="very_low">Very Low</option>
+                    <option value="low">Low</option>
+                    <option value="moderate" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="very_high">Very High</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="genderGroup" style="display: none;">
+                <label for="sparkGender">Voice Gender:</label>
+                <select id="sparkGender" style="width: 100%;">
+                    <option value="female" selected>Female</option>
+                    <option value="male">Male</option>
+                </select>
             </div>
 
             <button id="generateBtn">Generate Speech</button>
@@ -370,10 +369,31 @@
         const languageSelect = document.getElementById('language');
         const voiceSelect = document.getElementById('voice');
         const modelTypeSelect = document.getElementById('modelType');
+        const modelSelect = document.getElementById('model');
+        const referenceAudioGroup = document.getElementById('referenceAudioGroup');
+        const referenceAudioInput = document.getElementById('referenceAudio');
         
-        // Voice options organized by language
-        const voicesByLanguage = {
-            'a': [ // American English
+        // Model-specific language configurations
+        const languagesByModel = {
+            'kokoro': [
+                {value: 'a', text: '🇺🇸 American English'},
+                {value: 'b', text: '🇬🇧 British English'},
+                {value: 'e', text: '🇪🇸 Spanish'},
+                {value: 'f', text: '🇫🇷 French'},
+                {value: 'h', text: '🇮🇳 Hindi'},
+                {value: 'i', text: '🇮🇹 Italian'},
+                {value: 'p', text: '🇧🇷 Portuguese (Brazilian)'},
+                {value: 'j', text: '🇯🇵 Japanese'},
+                {value: 'z', text: '🇨🇳 Mandarin Chinese'}
+            ],
+            'csm': [], // No language selection for CSM
+            'spark': [] // Spark doesn't have language selection
+        };
+
+        // Model-specific voice configurations
+        const voicesByModel = {
+            'kokoro': {
+                'a': [ // American English
                 {value: 'af_heart', text: 'Heart (Female)'},
                 {value: 'af_alloy', text: 'Alloy (Female)'},
                 {value: 'af_aoede', text: 'Aoede (Female)'},
@@ -445,79 +465,143 @@
                 {value: 'zm_yunxia', text: 'Yunxia (Male)'},
                 {value: 'zm_yunyang', text: 'Yunyang (Male)'}
             ]
+            },
+            'spark': {
+                'default': [
+                    {value: 'default', text: 'Default Voice'}
+                ]
+            },
+            'csm': {
+                'default': [] // CSM uses reference audio for voice
+            }
         };
         
-        // Function to update voice options based on selected language
+        // Function to update language options based on selected model
+        function updateLanguageOptions() {
+            const selectedModel = modelTypeSelect.value;
+            const languages = languagesByModel[selectedModel] || [];
+            const languageGroup = document.getElementById('languageGroup');
+            
+            // Clear current options
+            languageSelect.innerHTML = '';
+            
+            if (languages.length > 0) {
+                languageGroup.style.display = 'block';
+                languages.forEach(lang => {
+                    const option = document.createElement('option');
+                    option.value = lang.value;
+                    option.textContent = lang.text;
+                    languageSelect.appendChild(option);
+                });
+                // Trigger voice update for the default language
+                updateVoiceOptions();
+            } else {
+                languageGroup.style.display = 'none';
+                // Still update voices for models without language selection
+                updateVoiceOptions();
+            }
+        }
+        
+        // Function to update voice options based on selected model and language
         function updateVoiceOptions() {
+            const selectedModel = modelTypeSelect.value;
             const selectedLanguage = languageSelect.value;
-            const voices = voicesByLanguage[selectedLanguage] || voicesByLanguage['a'];
+            const voiceGroup = document.getElementById('voiceGroup');
+            
+            let voices = [];
+            
+            if (voicesByModel[selectedModel]) {
+                if (selectedLanguage && voicesByModel[selectedModel][selectedLanguage]) {
+                    voices = voicesByModel[selectedModel][selectedLanguage];
+                } else if (voicesByModel[selectedModel]['default']) {
+                    voices = voicesByModel[selectedModel]['default'];
+                }
+            }
             
             // Clear current options
             voiceSelect.innerHTML = '';
             
-            // Add new options
-            voices.forEach(voice => {
-                const option = document.createElement('option');
-                option.value = voice.value;
-                option.textContent = voice.text;
-                voiceSelect.appendChild(option);
-            });
+            if (voices.length > 0) {
+                voiceGroup.style.display = 'block';
+                voices.forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice.value;
+                    option.textContent = voice.text;
+                    voiceSelect.appendChild(option);
+                });
+            } else {
+                // Hide voice selection for models that don't use predefined voices
+                if (selectedModel === 'csm') {
+                    voiceGroup.style.display = 'none';
+                } else {
+                    voiceGroup.style.display = 'block';
+                }
+            }
         }
         
-        // Model configurations
-        const modelConfigs = {
-            'kokoro': {
-                variants: [
-                    {value: 'mlx-community/Kokoro-82M-4bit', text: 'Kokoro 82M (4-bit)'},
-                    {value: 'mlx-community/Kokoro-82M-6bit', text: 'Kokoro 82M (6-bit)'},
-                    {value: 'mlx-community/Kokoro-82M-8bit', text: 'Kokoro 82M (8-bit)'},
-                    {value: 'mlx-community/Kokoro-82M-bf16', text: 'Kokoro 82M (bf16)'},
-                    {value: 'prince-canuma/Kokoro-82M', text: 'Kokoro 82M (Original)'}
-                ],
-                supportsLanguages: true,
-                supportsVoices: true,
-                supportsReferenceAudio: false
-            },
-            'csm': {
-                variants: [
-                    {value: 'mlx-community/csm-1b', text: 'CSM 1B'}
-                ],
-                supportsLanguages: false,
-                supportsVoices: false,
-                supportsReferenceAudio: true
-            },
-            'bark': {
-                variants: [
-                    {value: 'mlx-community/bark', text: 'Bark (Default)'},
-                    {value: 'mlx-community/bark-small', text: 'Bark Small'}
-                ],
-                supportsLanguages: true,
-                supportsVoices: true,
-                supportsReferenceAudio: false
-            },
-            'outetts': {
-                variants: [
-                    {value: 'OuteAI/OuteTTS-0.1-350M', text: 'OuteTTS 0.1 (350M)'},
-                    {value: 'OuteAI/OuteTTS-0.2-500M', text: 'OuteTTS 0.2 (500M)'}
-                ],
-                supportsLanguages: false,
-                supportsVoices: true,
-                supportsReferenceAudio: false
-            },
-            'spark': {
-                variants: [
-                    {value: 'mlx-community/spark-v2', text: 'Spark v2'}
-                ],
-                supportsLanguages: false,
-                supportsVoices: true,
-                supportsReferenceAudio: false
+        // Model configurations - will be fetched from server
+        let modelConfigs = {};
+        
+        // Fetch models from server
+        async function fetchModels() {
+            try {
+                const response = await fetch('/models');
+                const data = await response.json();
+                
+                // Clear and rebuild model type dropdown
+                modelTypeSelect.innerHTML = '';
+                
+                // Convert server response to our format
+                data.models.forEach(model => {
+                    // Add option to model type dropdown
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = `${model.name} (${model.description})`;
+                    modelTypeSelect.appendChild(option);
+                    
+                    // Store model config
+                    modelConfigs[model.id] = {
+                        variants: model.variants.map(v => ({
+                            value: v.value,
+                            text: v.name || v.text
+                        })),
+                        supportsLanguages: model.supports_languages,
+                        supportsVoices: model.supports_voices,
+                        supportsReferenceAudio: model.supports_reference_audio
+                    };
+                });
+                
+                // Initialize with first model
+                if (data.models.length > 0) {
+                    updateModelVariants();
+                    updateSparkControls();
+                }
+            } catch (error) {
+                console.error('Failed to fetch models:', error);
+                // Fallback to hardcoded if server fails
+                modelConfigs = {
+                    'kokoro': {
+                        variants: [
+                            {value: 'mlx-community/Kokoro-82M-4bit', text: 'Kokoro 82M (4-bit)'}
+                        ],
+                        supportsLanguages: true,
+                        supportsVoices: true,
+                        supportsReferenceAudio: false
+                    }
+                };
             }
-        };
+        }
 
         // Function to update model variants
         function updateModelVariants() {
             const selectedType = modelTypeSelect.value;
             const config = modelConfigs[selectedType];
+            
+            // Check if config exists
+            if (!config) {
+                console.warn('No config found for model:', selectedType);
+                return;
+            }
             
             // Clear current options
             modelSelect.innerHTML = '';
@@ -530,45 +614,61 @@
                 modelSelect.appendChild(option);
             });
             
-            // Show/hide UI elements based on model capabilities
-            if (config.supportsLanguages) {
-                languageSelect.parentElement.style.display = 'block';
-            } else {
-                languageSelect.parentElement.style.display = 'none';
-            }
-            
-            if (config.supportsVoices) {
-                voiceSelect.parentElement.style.display = 'block';
-            } else {
-                voiceSelect.parentElement.style.display = 'none';
-            }
-            
+            // Show/hide reference audio based on model capabilities
             if (config.supportsReferenceAudio) {
                 referenceAudioGroup.style.display = 'block';
             } else {
                 referenceAudioGroup.style.display = 'none';
             }
             
-            // Update voice options if the model supports voices and languages
-            if (config.supportsVoices && config.supportsLanguages) {
-                updateVoiceOptions();
-            }
+            // Update language and voice options
+            updateLanguageOptions();
         }
 
         // Update voices when language changes
         languageSelect.addEventListener('change', updateVoiceOptions);
         
         // Update model variants when model type changes
-        modelTypeSelect.addEventListener('change', updateModelVariants);
+        modelTypeSelect.addEventListener('change', function() {
+            updateModelVariants();
+            updateSparkControls();
+        });
         
-        // Initialize with default model type
-        updateModelVariants();
+        // Function to update controls based on whether Spark is selected
+        function updateSparkControls() {
+            const selectedType = modelTypeSelect.value;
+            
+            // Check if we have models loaded
+            if (!selectedType || Object.keys(modelConfigs).length === 0) {
+                return;
+            }
+            
+            const normalSpeedContainer = document.getElementById('normalSpeedContainer');
+            const sparkSpeedSelect = document.getElementById('sparkSpeed');
+            const pitchGroup = document.getElementById('pitchGroup');
+            const genderGroup = document.getElementById('genderGroup');
+            
+            if (selectedType === 'spark') {
+                // Show Spark-specific controls
+                normalSpeedContainer.style.display = 'none';
+                sparkSpeedSelect.style.display = 'block';
+                pitchGroup.style.display = 'block';
+                genderGroup.style.display = 'block';
+                // Hide voice selection for Spark
+                document.getElementById('voiceGroup').style.display = 'none';
+            } else {
+                // Show normal controls
+                normalSpeedContainer.style.display = 'block';
+                sparkSpeedSelect.style.display = 'none';
+                pitchGroup.style.display = 'none';
+                genderGroup.style.display = 'none';
+                // Show voice selection for other models
+                if (modelConfigs[selectedType] && modelConfigs[selectedType].supportsVoices) {
+                    document.getElementById('voiceGroup').style.display = 'block';
+                }
+            }
+        }
         
-        // Initialize with default language voices
-        updateVoiceOptions();
-        const modelSelect = document.getElementById('model');
-        const referenceAudioGroup = document.getElementById('referenceAudioGroup');
-        const referenceAudioInput = document.getElementById('referenceAudio');
         const speedInput = document.getElementById('speed');
         const speedValue = document.getElementById('speed-value');
         const generateBtn = document.getElementById('generateBtn');
@@ -685,7 +785,14 @@
             const language = languageSelect.value;
             const voice = voiceSelect.value;
             const model = modelSelect.value;
-            const speed = speedInput.value;
+            
+            // Get speed based on model type
+            let speed;
+            if (modelTypeSelect.value === 'spark') {
+                speed = document.getElementById('sparkSpeed').value;
+            } else {
+                speed = speedInput.value;
+            }
 
             if (!text.trim()) {
                 showTtsError('Please enter some text');
@@ -706,6 +813,14 @@
             formData.append('text', text);
             formData.append('model', model);
             formData.append('speed', speed);
+            
+            // Add pitch and gender for Spark models
+            if (modelTypeSelect.value === 'spark') {
+                const pitch = document.getElementById('sparkPitch').value;
+                const gender = document.getElementById('sparkGender').value;
+                formData.append('pitch', pitch);
+                formData.append('gender', gender);
+            }
             
             // Add model-specific parameters
             const selectedType = modelTypeSelect.value;
@@ -1333,9 +1448,22 @@
             return webrtcId;
         }
 
-        // Initialize tabs
-        const defaultTab = document.getElementsByClassName("tablinks")[0];
-        defaultTab.click();
+        // Initialize on page load
+        async function initialize() {
+            // Fetch models from server
+            await fetchModels();
+            
+            // Initialize tabs
+            const defaultTab = document.getElementsByClassName("tablinks")[0];
+            defaultTab.click();
+        }
+        
+        // Start initialization when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initialize);
+        } else {
+            initialize();
+        }
     </script>
 </body>
 </html>
