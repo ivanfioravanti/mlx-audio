@@ -221,6 +221,21 @@
             </div>
 
             <div class="form-group">
+                <label for="language">Language:</label>
+                <select id="language">
+                    <option value="a">🇺🇸 American English</option>
+                    <option value="b">🇬🇧 British English</option>
+                    <option value="e">🇪🇸 Spanish</option>
+                    <option value="f">🇫🇷 French</option>
+                    <option value="h">🇮🇳 Hindi</option>
+                    <option value="i">🇮🇹 Italian</option>
+                    <option value="p">🇧🇷 Portuguese (Brazilian)</option>
+                    <option value="j">🇯🇵 Japanese</option>
+                    <option value="z">🇨🇳 Mandarin Chinese</option>
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label for="voice">Voice:</label>
                 <select id="voice">
                     <option value="af_bella">AF Bella</option>
@@ -334,7 +349,107 @@
 
         // TTS elements
         const textInput = document.getElementById('text');
+        const languageSelect = document.getElementById('language');
         const voiceSelect = document.getElementById('voice');
+        
+        // Voice options organized by language
+        const voicesByLanguage = {
+            'a': [ // American English
+                {value: 'af_heart', text: 'Heart (Female)'},
+                {value: 'af_alloy', text: 'Alloy (Female)'},
+                {value: 'af_aoede', text: 'Aoede (Female)'},
+                {value: 'af_bella', text: 'Bella (Female)'},
+                {value: 'af_jessica', text: 'Jessica (Female)'},
+                {value: 'af_kore', text: 'Kore (Female)'},
+                {value: 'af_nicole', text: 'Nicole (Female)'},
+                {value: 'af_nova', text: 'Nova (Female)'},
+                {value: 'af_river', text: 'River (Female)'},
+                {value: 'af_sarah', text: 'Sarah (Female)'},
+                {value: 'af_sky', text: 'Sky (Female)'},
+                {value: 'am_adam', text: 'Adam (Male)'},
+                {value: 'am_echo', text: 'Echo (Male)'},
+                {value: 'am_eric', text: 'Eric (Male)'},
+                {value: 'am_fenrir', text: 'Fenrir (Male)'},
+                {value: 'am_liam', text: 'Liam (Male)'},
+                {value: 'am_michael', text: 'Michael (Male)'},
+                {value: 'am_onyx', text: 'Onyx (Male)'},
+                {value: 'am_puck', text: 'Puck (Male)'},
+                {value: 'am_santa', text: 'Santa (Male)'}
+            ],
+            'b': [ // British English
+                {value: 'bf_alice', text: 'Alice (Female)'},
+                {value: 'bf_emma', text: 'Emma (Female)'},
+                {value: 'bf_isabella', text: 'Isabella (Female)'},
+                {value: 'bf_lily', text: 'Lily (Female)'},
+                {value: 'bm_daniel', text: 'Daniel (Male)'},
+                {value: 'bm_fable', text: 'Fable (Male)'},
+                {value: 'bm_george', text: 'George (Male)'},
+                {value: 'bm_lewis', text: 'Lewis (Male)'}
+            ],
+            'e': [ // Spanish
+                {value: 'ef_dora', text: 'Dora (Female)'},
+                {value: 'em_alex', text: 'Alex (Male)'},
+                {value: 'em_santa', text: 'Santa (Male)'}
+            ],
+            'f': [ // French
+                {value: 'ff_siwis', text: 'Siwis (Female)'}
+            ],
+            'h': [ // Hindi
+                {value: 'hf_alpha', text: 'Alpha (Female)'},
+                {value: 'hf_beta', text: 'Beta (Female)'},
+                {value: 'hm_omega', text: 'Omega (Male)'},
+                {value: 'hm_psi', text: 'Psi (Male)'}
+            ],
+            'i': [ // Italian
+                {value: 'if_sara', text: 'Sara (Female)'},
+                {value: 'im_nicola', text: 'Nicola (Male)'}
+            ],
+            'p': [ // Portuguese (Brazilian)
+                {value: 'pf_dora', text: 'Dora (Female)'},
+                {value: 'pm_alex', text: 'Alex (Male)'},
+                {value: 'pm_santa', text: 'Santa (Male)'}
+            ],
+            'j': [ // Japanese
+                {value: 'jf_alpha', text: 'Alpha (Female)'},
+                {value: 'jf_gongitsune', text: 'Gongitsune (Female)'},
+                {value: 'jf_nezumi', text: 'Nezumi (Female)'},
+                {value: 'jf_tebukuro', text: 'Tebukuro (Female)'},
+                {value: 'jm_kumo', text: 'Kumo (Male)'}
+            ],
+            'z': [ // Mandarin Chinese
+                {value: 'zf_xiaobei', text: 'Xiaobei (Female)'},
+                {value: 'zf_xiaoni', text: 'Xiaoni (Female)'},
+                {value: 'zf_xiaoxiao', text: 'Xiaoxiao (Female)'},
+                {value: 'zf_xiaoyi', text: 'Xiaoyi (Female)'},
+                {value: 'zm_yunjian', text: 'Yunjian (Male)'},
+                {value: 'zm_yunxi', text: 'Yunxi (Male)'},
+                {value: 'zm_yunxia', text: 'Yunxia (Male)'},
+                {value: 'zm_yunyang', text: 'Yunyang (Male)'}
+            ]
+        };
+        
+        // Function to update voice options based on selected language
+        function updateVoiceOptions() {
+            const selectedLanguage = languageSelect.value;
+            const voices = voicesByLanguage[selectedLanguage] || voicesByLanguage['a'];
+            
+            // Clear current options
+            voiceSelect.innerHTML = '';
+            
+            // Add new options
+            voices.forEach(voice => {
+                const option = document.createElement('option');
+                option.value = voice.value;
+                option.textContent = voice.text;
+                voiceSelect.appendChild(option);
+            });
+        }
+        
+        // Update voices when language changes
+        languageSelect.addEventListener('change', updateVoiceOptions);
+        
+        // Initialize with default language voices
+        updateVoiceOptions();
         const modelSelect = document.getElementById('model');
         const speedInput = document.getElementById('speed');
         const speedValue = document.getElementById('speed-value');
@@ -449,6 +564,7 @@
         // Generate speech button handler
         generateBtn.addEventListener('click', function() {
             const text = textInput.value;
+            const language = languageSelect.value;
             const voice = voiceSelect.value;
             const model = modelSelect.value;
             const speed = speedInput.value;
@@ -473,6 +589,7 @@
             formData.append('voice', voice);
             formData.append('model', model);
             formData.append('speed', speed);
+            formData.append('language', language);
 
             // Send request to server
             fetch('/tts', {

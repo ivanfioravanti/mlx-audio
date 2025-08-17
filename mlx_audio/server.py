@@ -64,14 +64,18 @@ logger.debug(f"Using output folder: {OUTPUT_FOLDER}")
 
 
 def speech_to_speech_handler(
-    audio: tuple[int, NDArray[np.int16]], voice: str, speed: float, model: str
+    audio: tuple[int, NDArray[np.int16]],
+    voice: str,
+    speed: float,
+    model: str,
+    language: str = "a",
 ):
     text = stt_model.stt(audio)
     for segment in tts_model.generate(
         text=text,
         voice=voice,
         speed=speed,
-        lang_code=voice[0],
+        lang_code=language,
         verbose=False,
     ):
         yield (24_000, np.array(segment.audio, copy=False))
@@ -91,11 +95,12 @@ class SpeechToSpeechArgs(BaseModel):
     speed: float
     model: str
     webrtc_id: str
+    language: str = "a"
 
 
 @app.post("/speech_to_speech_input")
 def speech_to_speech_endpoint(args: SpeechToSpeechArgs):
-    stream.set_input(args.webrtc_id, args.voice, args.speed, args.model)
+    stream.set_input(args.webrtc_id, args.voice, args.speed, args.model, args.language)
     return {"status": "success"}
 
 
@@ -105,6 +110,7 @@ def tts_endpoint(
     voice: str = Form("af_heart"),
     speed: float = Form(1.0),
     model: str = Form("mlx-community/Kokoro-82M-4bit"),
+    language: str = Form("a"),
 ):
     """
     POST an x-www-form-urlencoded form with 'text' (and optional 'voice', 'speed', and 'model').
@@ -163,16 +169,42 @@ def tts_endpoint(
     output_path = os.path.join(OUTPUT_FOLDER, filename)
 
     logger.debug(
-        f"Generating TTS for text: '{text[:50]}...' with voice: {voice}, speed: {speed_float}, model: {model}"
+        f"Generating TTS for text: '{text[:50]}...' with voice: {voice}, speed: {speed_float}, model: {model}, language: {language}"
     )
     logger.debug(f"Output file will be: {output_path}")
+
+    # Map language names to codes if needed
+    language_map = {
+        "american_english": "a",
+        "british_english": "b",
+        "spanish": "e",
+        "french": "f",
+        "hindi": "h",
+        "italian": "i",
+        "portuguese": "p",
+        "japanese": "j",
+        "mandarin_chinese": "z",
+        # Also accept direct language codes
+        "a": "a",
+        "b": "b",
+        "e": "e",
+        "f": "f",
+        "h": "h",
+        "i": "i",
+        "p": "p",
+        "j": "j",
+        "z": "z",
+    }
+
+    # Get the language code, default to voice[0] if not found
+    lang_code = language_map.get(language.lower(), voice[0] if voice else "a")
 
     # We'll use the high-level "model.generate" method:
     results = tts_model.generate(
         text=text,
         voice=voice,
         speed=speed_float,
-        lang_code=voice[0],
+        lang_code=lang_code,
         verbose=False,
     )
 
@@ -388,6 +420,25 @@ def stop_audio():
         return JSONResponse(
             {"error": f"Failed to stop audio: {str(e)}"}, status_code=500
         )
+
+
+@app.get("/languages")
+def get_languages():
+    """
+    Get the list of supported languages for TTS.
+    """
+    languages = [
+        {"code": "a", "name": "American English", "display": "🇺🇸 American English"},
+        {"code": "b", "name": "British English", "display": "🇬🇧 British English"},
+        {"code": "e", "name": "Spanish", "display": "🇪🇸 Spanish"},
+        {"code": "f", "name": "French", "display": "🇫🇷 French"},
+        {"code": "h", "name": "Hindi", "display": "🇮🇳 Hindi"},
+        {"code": "i", "name": "Italian", "display": "🇮🇹 Italian"},
+        {"code": "p", "name": "Portuguese", "display": "🇧🇷 Portuguese (Brazilian)"},
+        {"code": "j", "name": "Japanese", "display": "🇯🇵 Japanese"},
+        {"code": "z", "name": "Mandarin Chinese", "display": "🇨🇳 Mandarin Chinese"},
+    ]
+    return {"languages": languages}
 
 
 @app.post("/open_output_folder")
