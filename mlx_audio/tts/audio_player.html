@@ -254,13 +254,31 @@
             </div>
 
             <div class="form-group">
-                <label for="model">Model:</label>
-                <select id="model">
-                    <option value="mlx-community/Kokoro-82M-4bit">Kokoro 82M 4bit</option>
-                    <option value="mlx-community/Kokoro-82M-6bit">Kokoro 82M 6bit</option>
-                    <option value="mlx-community/Kokoro-82M-8bit">Kokoro 82M 8bit</option>
-                    <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M bf16</option>
+                <label for="modelType">Model Type:</label>
+                <select id="modelType">
+                    <option value="kokoro">Kokoro (Multilingual)</option>
+                    <option value="csm">CSM/Sesame (Voice Cloning)</option>
+                    <option value="bark">Bark (Multi-language + Sound Effects)</option>
+                    <option value="outetts">OuteTTS (Voice Customization)</option>
+                    <option value="spark">Spark (Fast TTS)</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label for="model">Model Variant:</label>
+                <select id="model">
+                    <option value="mlx-community/Kokoro-82M-4bit">Kokoro 82M (4-bit)</option>
+                    <option value="mlx-community/Kokoro-82M-6bit">Kokoro 82M (6-bit)</option>
+                    <option value="mlx-community/Kokoro-82M-8bit">Kokoro 82M (8-bit)</option>
+                    <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M (bf16)</option>
+                    <option value="prince-canuma/Kokoro-82M">Kokoro 82M (Original)</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="referenceAudioGroup" style="display: none;">
+                <label for="referenceAudio">Reference Audio (for voice cloning):</label>
+                <input type="file" id="referenceAudio" accept="audio/*">
+                <small style="color: #999;">Upload an audio file to clone its voice</small>
             </div>
 
             <div class="form-group">
@@ -351,6 +369,7 @@
         const textInput = document.getElementById('text');
         const languageSelect = document.getElementById('language');
         const voiceSelect = document.getElementById('voice');
+        const modelTypeSelect = document.getElementById('modelType');
         
         // Voice options organized by language
         const voicesByLanguage = {
@@ -445,12 +464,111 @@
             });
         }
         
+        // Model configurations
+        const modelConfigs = {
+            'kokoro': {
+                variants: [
+                    {value: 'mlx-community/Kokoro-82M-4bit', text: 'Kokoro 82M (4-bit)'},
+                    {value: 'mlx-community/Kokoro-82M-6bit', text: 'Kokoro 82M (6-bit)'},
+                    {value: 'mlx-community/Kokoro-82M-8bit', text: 'Kokoro 82M (8-bit)'},
+                    {value: 'mlx-community/Kokoro-82M-bf16', text: 'Kokoro 82M (bf16)'},
+                    {value: 'prince-canuma/Kokoro-82M', text: 'Kokoro 82M (Original)'}
+                ],
+                supportsLanguages: true,
+                supportsVoices: true,
+                supportsReferenceAudio: false
+            },
+            'csm': {
+                variants: [
+                    {value: 'mlx-community/csm-1b', text: 'CSM 1B'}
+                ],
+                supportsLanguages: false,
+                supportsVoices: false,
+                supportsReferenceAudio: true
+            },
+            'bark': {
+                variants: [
+                    {value: 'mlx-community/bark', text: 'Bark (Default)'},
+                    {value: 'mlx-community/bark-small', text: 'Bark Small'}
+                ],
+                supportsLanguages: true,
+                supportsVoices: true,
+                supportsReferenceAudio: false
+            },
+            'outetts': {
+                variants: [
+                    {value: 'OuteAI/OuteTTS-0.1-350M', text: 'OuteTTS 0.1 (350M)'},
+                    {value: 'OuteAI/OuteTTS-0.2-500M', text: 'OuteTTS 0.2 (500M)'}
+                ],
+                supportsLanguages: false,
+                supportsVoices: true,
+                supportsReferenceAudio: false
+            },
+            'spark': {
+                variants: [
+                    {value: 'mlx-community/spark-v2', text: 'Spark v2'}
+                ],
+                supportsLanguages: false,
+                supportsVoices: true,
+                supportsReferenceAudio: false
+            }
+        };
+
+        // Function to update model variants
+        function updateModelVariants() {
+            const selectedType = modelTypeSelect.value;
+            const config = modelConfigs[selectedType];
+            
+            // Clear current options
+            modelSelect.innerHTML = '';
+            
+            // Add new options
+            config.variants.forEach(variant => {
+                const option = document.createElement('option');
+                option.value = variant.value;
+                option.textContent = variant.text;
+                modelSelect.appendChild(option);
+            });
+            
+            // Show/hide UI elements based on model capabilities
+            if (config.supportsLanguages) {
+                languageSelect.parentElement.style.display = 'block';
+            } else {
+                languageSelect.parentElement.style.display = 'none';
+            }
+            
+            if (config.supportsVoices) {
+                voiceSelect.parentElement.style.display = 'block';
+            } else {
+                voiceSelect.parentElement.style.display = 'none';
+            }
+            
+            if (config.supportsReferenceAudio) {
+                referenceAudioGroup.style.display = 'block';
+            } else {
+                referenceAudioGroup.style.display = 'none';
+            }
+            
+            // Update voice options if the model supports voices and languages
+            if (config.supportsVoices && config.supportsLanguages) {
+                updateVoiceOptions();
+            }
+        }
+
         // Update voices when language changes
         languageSelect.addEventListener('change', updateVoiceOptions);
+        
+        // Update model variants when model type changes
+        modelTypeSelect.addEventListener('change', updateModelVariants);
+        
+        // Initialize with default model type
+        updateModelVariants();
         
         // Initialize with default language voices
         updateVoiceOptions();
         const modelSelect = document.getElementById('model');
+        const referenceAudioGroup = document.getElementById('referenceAudioGroup');
+        const referenceAudioInput = document.getElementById('referenceAudio');
         const speedInput = document.getElementById('speed');
         const speedValue = document.getElementById('speed-value');
         const generateBtn = document.getElementById('generateBtn');
@@ -586,10 +704,24 @@
             // Create form data
             const formData = new FormData();
             formData.append('text', text);
-            formData.append('voice', voice);
             formData.append('model', model);
             formData.append('speed', speed);
-            formData.append('language', language);
+            
+            // Add model-specific parameters
+            const selectedType = modelTypeSelect.value;
+            const config = modelConfigs[selectedType];
+            
+            if (config.supportsVoices) {
+                formData.append('voice', voice);
+            }
+            
+            if (config.supportsLanguages) {
+                formData.append('language', language);
+            }
+            
+            if (config.supportsReferenceAudio && referenceAudioInput.files.length > 0) {
+                formData.append('reference_audio', referenceAudioInput.files[0]);
+            }
 
             // Send request to server
             fetch('/tts', {

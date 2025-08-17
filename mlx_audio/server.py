@@ -10,7 +10,7 @@ import numpy as np
 import requests
 import soundfile as sf
 import uvicorn
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -107,10 +107,11 @@ def speech_to_speech_endpoint(args: SpeechToSpeechArgs):
 @app.post("/tts")
 def tts_endpoint(
     text: str = Form(...),
-    voice: str = Form("af_heart"),
+    voice: str = Form(None),
     speed: float = Form(1.0),
     model: str = Form("mlx-community/Kokoro-82M-4bit"),
     language: str = Form("a"),
+    reference_audio: UploadFile = File(None),
 ):
     """
     POST an x-www-form-urlencoded form with 'text' (and optional 'voice', 'speed', and 'model').
@@ -132,18 +133,8 @@ def tts_endpoint(
     except ValueError:
         return JSONResponse({"error": "Invalid speed value"}, status_code=400)
 
-    # Validate model parameter
-    valid_models = [
-        "mlx-community/Kokoro-82M-4bit",
-        "mlx-community/Kokoro-82M-6bit",
-        "mlx-community/Kokoro-82M-8bit",
-        "mlx-community/Kokoro-82M-bf16",
-    ]
-    if model not in valid_models:
-        return JSONResponse(
-            {"error": f"Invalid model. Must be one of: {', '.join(valid_models)}"},
-            status_code=400,
-        )
+    # Remove strict model validation - let the load_model function handle it
+    # This allows for more flexibility in model selection
 
     # Store current model repo_id for comparison
     current_model_repo_id = (
@@ -199,14 +190,41 @@ def tts_endpoint(
     # Get the language code, default to voice[0] if not found
     lang_code = language_map.get(language.lower(), voice[0] if voice else "a")
 
+    # Handle reference audio for models that support it (like CSM/Sesame)
+    ref_audio_path = None
+    if reference_audio:
+        # Save the uploaded audio temporarily
+        temp_audio_path = os.path.join(OUTPUT_FOLDER, f"temp_ref_{unique_id}.wav")
+        with open(temp_audio_path, "wb") as f:
+            f.write(reference_audio.file.read())
+        ref_audio_path = temp_audio_path
+    
+    # Prepare generation parameters
+    gen_params = {
+        "text": text,
+        "speed": speed_float,
+        "verbose": False,
+    }
+    
+    # Add model-specific parameters
+    if voice:
+        gen_params["voice"] = voice
+    
+    # Check if model supports language codes (primarily Kokoro)
+    if "kokoro" in model.lower() or "bark" in model.lower():
+        gen_params["lang_code"] = lang_code
+    
+    # Add reference audio for models that support it
+    if ref_audio_path and ("csm" in model.lower() or "sesame" in model.lower()):
+        gen_params["ref_audio"] = ref_audio_path
+    
     # We'll use the high-level "model.generate" method:
-    results = tts_model.generate(
-        text=text,
-        voice=voice,
-        speed=speed_float,
-        lang_code=lang_code,
-        verbose=False,
-    )
+    try:
+        results = tts_model.generate(**gen_params)
+    finally:
+        # Clean up temporary reference audio file
+        if ref_audio_path and os.path.exists(ref_audio_path):
+            os.remove(ref_audio_path)
 
     # We'll just gather all segments (if any) into a single wav
     # It's typical for multi-segment text to produce multiple wave segments:
@@ -439,6 +457,77 @@ def get_languages():
         {"code": "z", "name": "Mandarin Chinese", "display": "🇨🇳 Mandarin Chinese"},
     ]
     return {"languages": languages}
+
+
+@app.get("/models")
+def get_models():
+    """
+    Get the list of available TTS models with their configurations.
+    """
+    models = [
+        {
+            "id": "kokoro",
+            "name": "Kokoro",
+            "description": "Multilingual TTS with 9 languages",
+            "supports_languages": True,
+            "supports_voices": True,
+            "supports_reference_audio": False,
+            "variants": [
+                {"value": "mlx-community/Kokoro-82M-4bit", "name": "Kokoro 82M (4-bit)"},
+                {"value": "mlx-community/Kokoro-82M-6bit", "name": "Kokoro 82M (6-bit)"},
+                {"value": "mlx-community/Kokoro-82M-8bit", "name": "Kokoro 82M (8-bit)"},
+                {"value": "mlx-community/Kokoro-82M-bf16", "name": "Kokoro 82M (bf16)"},
+                {"value": "prince-canuma/Kokoro-82M", "name": "Kokoro 82M (Original)"},
+            ]
+        },
+        {
+            "id": "csm",
+            "name": "CSM/Sesame",
+            "description": "Conversational Speech Model with voice cloning",
+            "supports_languages": False,
+            "supports_voices": False,
+            "supports_reference_audio": True,
+            "variants": [
+                {"value": "mlx-community/csm-1b", "name": "CSM 1B"},
+            ]
+        },
+        {
+            "id": "bark",
+            "name": "Bark",
+            "description": "Multi-language TTS with sound effects",
+            "supports_languages": True,
+            "supports_voices": True,
+            "supports_reference_audio": False,
+            "variants": [
+                {"value": "mlx-community/bark", "name": "Bark (Default)"},
+                {"value": "mlx-community/bark-small", "name": "Bark Small"},
+            ]
+        },
+        {
+            "id": "outetts",
+            "name": "OuteTTS",
+            "description": "TTS with voice customization",
+            "supports_languages": False,
+            "supports_voices": True,
+            "supports_reference_audio": False,
+            "variants": [
+                {"value": "OuteAI/OuteTTS-0.1-350M", "name": "OuteTTS 0.1 (350M)"},
+                {"value": "OuteAI/OuteTTS-0.2-500M", "name": "OuteTTS 0.2 (500M)"},
+            ]
+        },
+        {
+            "id": "spark",
+            "name": "Spark",
+            "description": "Fast TTS model",
+            "supports_languages": False,
+            "supports_voices": True,
+            "supports_reference_audio": False,
+            "variants": [
+                {"value": "mlx-community/spark-v2", "name": "Spark v2"},
+            ]
+        },
+    ]
+    return {"models": models}
 
 
 @app.post("/open_output_folder")
